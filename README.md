@@ -30,7 +30,7 @@ Open‑source Browser Phone / Web Phone SDK for WebRTC and VoIP — securely pro
 
 ## Overview
 
-Siperb's Web-Phone is a lightweight JavaScript SDK that powers open‑source Web Phone / Browser Phone applications. It securely retrieves user session, devices, and SIP provisioning (username, password, domain, WSS/WebSocket) from the Siperb API so you can bootstrap a WebRTC softphone in minutes. Use it to initialize SIP.js, JsSIP, or your own VoIP client with consistent, secure provisioning flows — in both browser and module environments, with optional caching for performance.
+Siperb's Web-Phone is a lightweight JavaScript SDK that powers open‑source Web Phone / Browser Phone applications. It securely retrieves user session, devices, and SIP provisioning (username, password, domain, WSS/WebSocket) from the Siperb API so you can bootstrap a WebRTC softphone in minutes. Use it to initialize SIP.js, JsSIP, or your own VoIP client with consistent, secure provisioning flows — in both browser and module environments, with optional caching for performance. Once installed in your CRM, Website, ERP, Saas or Intranet - you can enable powerful [click to dial](https://www.web-phone.org/documentation/) features.
 
 ![Web Phone](./assets/Web-Phone.webp)
 
@@ -205,7 +205,9 @@ Requirements & notes
 - If your environment uses strict egress controls, whitelist the Siperb CDN domains.
 - The IFRAME must be dedicated to the phone (don’t attempt to inject the phone UI into a DIV on your page).
 
+# Click To Dial
 
+Once installed, the phone can both accept and originate calls. Calls may also be initiated programmatically, enabling "[click to call](https://www.web-phone.org/click-to-dial/)" (also known as "[click to dial](https://www.web-phone.org/click-to-dial/)") functionality directly from your application or web page.. 
 
 ## Building, Running, and Compiling the Library
 
