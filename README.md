@@ -52,6 +52,7 @@ Siperb's Web-Phone is a lightweight JavaScript SDK that powers open‑source Web
 - Projects migrating desk phone provisioning into a modern, browser‑based softphone
 
 ## Quick Start
+Refer to API Docs here [API](docs/README.md)
 
 ### In the Browser
 Include the minified bundle from the CDN in your HTML:
