@@ -422,3 +422,5 @@ FodyWeavers.xsd
 .DS_Store
 
 dist/
+
+env.js
