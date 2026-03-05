@@ -5,10 +5,11 @@
     <title>Browser Phone Test</title>
     <!-- Siperb Provisioning UMD build -->
     <script src="./dist/Siperb-Web-Phone.umd.min.js"></script>
+    <script src="./env.js"></script>
     <!-- Include your test script -->
     <script>
         async function main() {
-            const accessToken = '<YOUR_PERSONAL_ACCESS_TOKEN>';
+            const accessToken = window.PERSONAL_ACCESS_TOKEN || "<YOUR_PERSONAL_ACCESS_TOKEN>";
             let session;
             try {
                 session = await window.Siperb.Login(accessToken);
@@ -19,7 +20,7 @@
 
             // Assume you have a known DeviceToken or use GetDevices as in test.js
             // See admin control Panel for generating Script Devices (to get DeviceToken)
-            const deviceToken = "<YOUR_DEVICE_TOKEN>";
+            const deviceToken = window.DEVICE_TOKEN || "<YOUR_DEVICE_TOKEN>";
             const provisioning = await window.Siperb.GetProvisioning({
                 UserId: session.UserId,
                 DeviceToken: deviceToken,
@@ -104,7 +105,7 @@
             console.log('✅ Browser Phone provisioned and running.');
 
             // Wire up sample button
-            document.getElementById('sample_dial').addEventListener('click', () => {
+            document.getElementById('sample_dial').addEventListener('click', async () => {
                 // You need to make sure to are on the 'window.phone' namespace in the IFRAME
                 const phone = (thePhoneFrame.contentWindow && thePhoneFrame.contentWindow.phone) ? thePhoneFrame.contentWindow.phone : null;
                 if (!phone) {
@@ -115,13 +116,51 @@
 
                 // Now you have access to the phone API
                 const numberToDial = '*65';
-                phone.Dial(numberToDial, false, 'sip');
+                const sessionId = await phone.Dial(numberToDial, false, 'sip');
+                console.log('Dialed number:', numberToDial, 'Session ID:', sessionId);
+            });
+            document.getElementById('sample_dtmf_1').addEventListener('click', async () => {
+                const phone = (thePhoneFrame.contentWindow && thePhoneFrame.contentWindow.phone) ? thePhoneFrame.contentWindow.phone : null;
+                if (!phone) {
+                    console.error('Phone API not available in IFRAME.');
+                    return;
+                }
+                const sessions = (phone.SelectedBuddy && phone.SelectedBuddy.Sessions)? phone.SelectedBuddy.Sessions : [];
+                if (!sessions || sessions.length === 0) {
+                    console.error('No active session to send DTMF to.');
+                    return;
+                }
+                const session = sessions[0];
+                await phone.OnSendDtmf('1', session);
+                console.log('Sent DTMF "1" to session:', session.Id);
+            });
+            document.getElementById('sample_dtmf_123').addEventListener('click', async () => {
+                const phone = (thePhoneFrame.contentWindow && thePhoneFrame.contentWindow.phone) ? thePhoneFrame.contentWindow.phone : null;
+                if (!phone) {
+                    console.error('Phone API not available in IFRAME.');
+                    return;
+                }
+                const sessions = (phone.SelectedBuddy && phone.SelectedBuddy.Sessions)? phone.SelectedBuddy.Sessions : [];
+                if (!sessions || sessions.length === 0) {
+                    console.error('No active session to send DTMF to.');
+                    return;
+                }
+                const session = sessions[0];
+                await phone.OnSendDtmf('1', session);
+                await wait(1000);
+                await phone.OnSendDtmf('1', session);
+                await wait(1000);
+                await phone.OnSendDtmf('1', session);
+                console.log('Sent DTMF "123" to session:', session.Id);
             });
         }
         window.addEventListener('load', async () => {
             await main();
             console.log('🎉 Browser Phone Test Completed.');
         });
+        window.wait = function(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
 
     </script>
 </head>
@@ -131,7 +170,8 @@
     <p>Open the console to see Browser Phone logs and provisioning output.</p>
 
     <div>
-        Click to Dial sample: <button id="sample_dial">Dial *65</button>
+        Click to Dial sample: <button id="sample_dial">Dial *65</button> 
+        Send DTMF:  <button id="sample_dtmf_1">1</button> <button id="sample_dtmf_123">123</button>
     </div>
     <br>
 

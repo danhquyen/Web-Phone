@@ -408,59 +408,66 @@ const Siperb = {
     // Internal Function to Load JS files
     LoadScripts(versionTree, platform, target) {
         return new Promise(function (resolve, reject) {
-            // Load the JS files
-            versionTree.forEach(function (asset) {
-                if (!asset.Url.startsWith("/") & !asset.Url.startsWith("https://cdn.siperb.com/")) {
+            const jsAssets = versionTree.filter(function (asset) {
+                return (asset.Platform == "common" || asset.Platform == platform) && asset.Type == "js";
+            });
+
+            if (jsAssets.length === 0) {
+                console.log("LoadScripts: %cNo JS files to load", "color: orange;");
+                return resolve();
+            }
+
+            let pending = jsAssets.length;
+            let settled = false;
+
+            function fail(url) {
+                if (settled) return;
+                settled = true;
+                reject(`Error loading JS: ${url}`);
+            }
+
+            jsAssets.forEach(function (asset) {
+                if (!asset.Url.startsWith("/") && !asset.Url.startsWith("https://cdn.siperb.com/")) {
                     console.log(`LoadScripts: %cUnable to load JS: ${asset.Url}`, "color: red;");
-                    return; // Skip assets that are not from the CDN
+                    fail(asset.Url);
+                    return;
                 }
-                if ((asset.Platform == "common" || asset.Platform == platform) && asset.Type == "js") {
-                    // Create a script element and set the src to the asset URL
-                    // We need to use the phone iframe's document to add the script
-                    let script = target.createElement("script");
-                    script.onload = function () {
-                        // Check if the asset has dependencies
-                        // Dependency files should be packed into a single file
-                        if (asset.Dependencies) {
-                            asset.Dependencies.forEach(function (dependency) {
-                                if (!dependency.Url.startsWith("https://cdn.siperb.com/")) {
-                                    return; // Skip assets that are not from the CDN
-                                }
-                                // Load the dependency
-                                let depScript = target.createElement("script");
-                                depScript.onload = function () {
-                                    // Set the Loaded property to true
-                                    dependency.Loaded = true;
-                                };
-                                depScript.onerror = function () {
-                                    console.warn(`LoadScripts: %cError loading JS: ${dependency.Url}`, "color: red;");
-                                };
-                                depScript.src = dependency.Url;
-                                // Append the script to the head of the phone iframe
-                                target.head.appendChild(depScript);
-                                // These can load in their own time, so we don't need to wait for them
-                            });
-                        }
-                        // Set the Loaded property to true
-                        asset.Loaded = true;
-                        // Check if all the JS files are loaded, by looking at the .Loaded property
-                        let allLoaded = true;
-                        versionTree.forEach(function (asset) {
-                            if ((asset.Platform == "common" || asset.Platform == platform) && asset.Type == "js" && asset.Loaded == false) allLoaded = false;
+
+                // Create a script element and set the src to the asset URL.
+                // We use the phone iframe's document to add the script.
+                let script = target.createElement("script");
+                script.onload = function () {
+                    if (asset.Dependencies) {
+                        asset.Dependencies.forEach(function (dependency) {
+                            if (!dependency.Url.startsWith("https://cdn.siperb.com/")) {
+                                return;
+                            }
+                            let depScript = target.createElement("script");
+                            depScript.onload = function () {
+                                dependency.Loaded = true;
+                            };
+                            depScript.onerror = function () {
+                                console.warn(`LoadScripts: %cError loading JS: ${dependency.Url}`, "color: red;");
+                            };
+                            depScript.src = dependency.Url;
+                            target.head.appendChild(depScript);
                         });
-                        if (allLoaded) {
-                            console.log("LoadScripts: %cAll JS files loaded", "color: green;");
-                            resolve();
-                        }
-                    };
-                    script.onerror = function () {
-                        // There is no error handling for this, but we should probably do something
-                        console.log(`LoadScripts: %cError loading JS: ${asset.Url}`, "color: red;");
-                    };
-                    script.src = asset.Url;
-                    // Append the script to the head of the phone iframe
-                    target.head.appendChild(script);
-                }
+                    }
+
+                    asset.Loaded = true;
+                    pending -= 1;
+                    if (!settled && pending === 0) {
+                        settled = true;
+                        console.log("LoadScripts: %cAll JS files loaded", "color: green;");
+                        resolve();
+                    }
+                };
+                script.onerror = function () {
+                    console.log(`LoadScripts: %cError loading JS: ${asset.Url}`, "color: red;");
+                    fail(asset.Url);
+                };
+                script.src = asset.Url;
+                target.head.appendChild(script);
             });
         });
     },
@@ -519,10 +526,10 @@ const Siperb = {
             phone.Settings.MaxDidLength = (typeof options.MaxDidLength === "number") ? options.MaxDidLength : 16;
             phone.Settings.EnableAlphanumericDial = (typeof options.EnableAlphanumericDial === "boolean") ? options.EnableAlphanumericDial : false;
             phone.Settings.UiMaxWidth = (typeof options.UiMaxWidth === "number") ? options.UiMaxWidth : 1024;
-            phone.Settings.DisplayDateFormat = (typeof options.DisplayDateFormat === "undefined")? options.DisplayDateFormat : "YYYY-MM-DD";
-            phone.Settings.DisplayTimeFormat = (typeof options.DisplayTimeFormat === "undefined")? options.DisplayTimeFormat : "h:mm:ss A";
+            phone.Settings.DisplayDateFormat = (typeof options.DisplayDateFormat !== "undefined" && options.DisplayDateFormat !== null) ? options.DisplayDateFormat : "YYYY-MM-DD";
+            phone.Settings.DisplayTimeFormat = (typeof options.DisplayTimeFormat !== "undefined" && options.DisplayTimeFormat !== null) ? options.DisplayTimeFormat : "h:mm:ss A";
             phone.Settings.UiThemeStyle = (typeof options.UiThemeStyle !== "undefined") ? options.UiThemeStyle : "system";
-            phone.Settings.Language = (typeof options.language !== "undefined" && options.language !== null) ? options.language : "auto";
+            phone.Settings.Language = (typeof options.Language !== "undefined" && options.Language !== null) ? options.Language : ((typeof options.language !== "undefined" && options.language !== null) ? options.language : "auto");
             phone.Settings.BuddyAutoDeleteAtEnd = (typeof options.BuddyAutoDeleteAtEnd == "boolean") ? options.BuddyAutoDeleteAtEnd : false;
             phone.Settings.HideAutoDeleteBuddies = (typeof options.HideAutoDeleteBuddies == "boolean") ? options.HideAutoDeleteBuddies : false;
             phone.Settings.BuddySortBy = (typeof options.BuddySortBy !== "undefined") ? options.BuddySortBy : "activity";

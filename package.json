@@ -10,8 +10,7 @@
     "start": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-index.html",
     "start:sipjs": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-SIPJS.html",
     "start:jssip": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-JSSIP.html",
-    "start:phone": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-Browser-Phone.html",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start:phone": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-Browser-Phone.html"
   },
   "keywords": [],
   "author": "",

@@ -38,7 +38,7 @@
                 sockets: [socket],
                 uri: `sip:${provisioning.SipUsername}@${provisioning.SipDomain}`,
                 password: provisioning.SipPassword,
-                contact_uri: `sip:${provisioning.ContactUserName}@${provisioning.SipDomain}`,
+                contact_uri: `sip:${provisioning.SipContact || provisioning.ContactUserName}@${provisioning.SipDomain}`,
                 // ...other JsSIP options as needed
             };
 
