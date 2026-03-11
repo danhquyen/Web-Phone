@@ -58,7 +58,7 @@ Refer to API Docs here [API](docs/README.md)
 Include the minified bundle from the CDN in your HTML:
 
 ```html
-<script src="https://cdn.siperb.com/lib/Siperb-Web-Phone/Web-Phone-0.0.8.umd.min.js"></script>
+<script src="https://cdn.siperb.com/lib/Siperb-Web-Phone/Web-Phone-<VERSION_NUMBER>.umd.min.js"></script>
 ```
 
 ### As a Module (ESM)
@@ -179,7 +179,9 @@ These examples show how to:
 
 # Full Browser Phone Example
 
-[Siperb Web Phone](./test-Browser-Phone.html)
+- [Codepen Eample](https://codepen.io/siperb/pen/myrOdap) (https://codepen.io/siperb/pen/myrOdap)
+
+- [Siperb Web Phone](./test-Browser-Phone.html)
 
 This repository includes a fully usable, IFRAME‑based Browser Phone that you can embed into any web app. It follows the same secure flow described above: Login → (optional) GetDevices → GetProvisioning → Initialize Phone. The UI, logic, and media assets are loaded on demand from the Siperb CDN and initialized inside your own IFRAME.
 
