@@ -1,4 +1,4 @@
-## Phone API (`@PhoneAPI` surface)
+# Phone API (`@PhoneAPI` surface)
 
 This document describes the subset of the `window.phone` API that is explicitly marked with the `@PhoneAPI` tag in the source code.  
 Only methods whose JSDoc comments include `@PhoneAPI` are listed here.
@@ -34,6 +34,9 @@ Only methods whose JSDoc comments include `@PhoneAPI` are listed here.
     - [`phone.PlayRecording(recording)`](#phoneplayrecordingrecording)
   - [Message stream](#message-stream)
     - [`phone.LoadMessage(messageId)`](#phoneloadmessagemessageid)
+    - [`phone.FlagMessage(messageId)`](#phoneflagmessagemessageid)
+  - [Session events](#session-events)
+    - [`phone.OnSessionChange(callback)`](#phoneonsessionchangecallback)
 - **[🧭 API Reference](#-api-reference)**
 - **[💡 Examples & Usage](#-examples--usage)**
 - **[📝 Notes & Edge Cases](#-notes--edge-cases)**
@@ -50,10 +53,12 @@ This document only includes that tagged surface.
 
 High‑level groups:
 
+- **Initialization**: `InitPhoneAPI()` attaches the tagged methods to `window.phone`.
 - **Call control**: Dial, answer, end, hold, mute, transfer, and DTMF helpers.
 - **Buddy management**: Add, delete, and update buddies in `phone.MyBuddies`.
 - **Recordings**: Save, retrieve, and play call recordings.
-- **Message stream**: Load a stored message by ID.
+- **Message stream**: Load and flag a stored message by ID.
+- **Session events**: Subscribe to session state changes.
 
 </details>
 
@@ -68,9 +73,11 @@ High‑level groups:
   - Attaches all `@PhoneAPI`‑tagged methods as functions on `window.phone`.
   - Uses helpers and callbacks defined elsewhere in the core (for example, providers, buddies, sessions, and storage).
 - **Module**: `InitMessageStreamCallbacks` (from `src/MessageStreamCallbacks.ts`)
-  - Adds `phone.LoadMessage(messageId)` and other message‑stream helpers.
+  - Adds `phone.LoadMessage(messageId)` and `phone.FlagMessage(messageId)` (and other message‑stream helpers).
+- **Module**: `InitSessionCallbacks` (from `src/SessionCallbacks.ts`)
+  - Adds `phone.OnSessionChange(callback)` to subscribe to `"OnSessionStateChange"`.
 
-All functions documented below live under the global `window.phone` namespace.
+All methods documented below live under the global `window.phone` namespace (after `InitPhoneAPI()` runs), except `InitPhoneAPI()` itself which is the initializer.
 
 </details>
 
@@ -80,6 +87,18 @@ All functions documented below live under the global `window.phone` namespace.
 <summary>⚙️ Functions & Methods</summary>
 
 ### ⚙️ Functions & Methods
+
+#### Initialization
+
+##### `InitPhoneAPI()`
+
+```typescript
+InitPhoneAPI(): void
+```
+
+Initializes the Phone API by attaching the public (tagged) methods to `window.phone`.
+
+---
 
 #### Call control
 
@@ -274,7 +293,7 @@ Cancels a pending attended transfer and restores the original call:
 ##### `phone.SendDtmf(sessionId, dtmf)`
 
 ```typescript
-phone.SendDtmf(sessionId: string, dtmf: string): boolean | void
+phone.SendDtmf(sessionId: string, dtmf: string): boolean | undefined
 ```
 
 Sends DTMF tones to a given session.
@@ -283,7 +302,7 @@ Sends DTMF tones to a given session.
 - Resolves the provider via `phone.GetProvider(session.Provider)`.
 - If the provider implements `SendDtmf`, calls it asynchronously.
 
-Returns `true` when a send attempt is initiated, or `false`/`void` when the session or provider cannot be resolved.
+Returns `true` when a send attempt is initiated, `false` when the provider cannot be resolved, or `undefined` when the session cannot be resolved.
 
 ---
 
@@ -380,6 +399,37 @@ Loads a single message from the Message Stream by its ID.
 - Delegates directly to `phone.IndexStorage.GetFromStore("MessageStream", messageId)`.
 - Resolves to the stored message object when found, or `null` when not found.
 
+---
+
+##### `phone.FlagMessage(messageId)`
+
+```typescript
+phone.FlagMessage(messageId: string): Promise<void>
+```
+
+Flags a message by ID and persists the change.
+
+- Loads the message via `phone.GetMessageStreamItem(messageId)`.
+- Sets `message.Flagged = true`.
+- Mirrors the flag onto `phone.MyBuddies[*].MessageStreamItems` when present and persists via `phone.SetMessageStreamItem(...)`.
+
+---
+
+#### Session events
+
+##### `phone.OnSessionChange(callback)`
+
+```typescript
+phone.OnSessionChange(
+  callback: (data: { sessionId: string; state: string; event: any }) => void
+): () => void
+```
+
+Registers a callback for `"OnSessionStateChange"` events and returns an unsubscribe function.
+
+- The callback receives `{ sessionId, state, event }`.
+- Values are read from `event.detail.Data` first, then `event.detail`.
+
 </details>
 
 ---
@@ -391,6 +441,7 @@ Loads a single message from the Message Stream by its ID.
 
 | Group            | Method                         | Signature                                                      | Returns                                              |
 |------------------|--------------------------------|----------------------------------------------------------------|------------------------------------------------------|
+| Initialization    | `InitPhoneAPI`                  | `()`                                                           | `void`                                               |
 | Call control     | `Dial`                         | `(param, withVideo?, provider?)`                              | `Promise<string \| undefined>`                      |
 | Call control     | `EndCall`                      | `(param)`                                                     | `Promise<SessionObject \| undefined>`               |
 | Call control     | `Answer`                       | `(param)`                                                     | `Promise<SessionObject \| undefined>`               |
@@ -403,7 +454,7 @@ Loads a single message from the Message Stream by its ID.
 | Call control     | `AttendedTransfer`             | `(param, destination)`                                        | `Promise<{ session: SessionObject, childSessionId: string } \| undefined>` |
 | Call control     | `CompleteTransfer`             | `(childSessionId)`                                            | `Promise<void>`                                     |
 | Call control     | `CancelTransfer`               | `(childSessionId)`                                            | `Promise<void>`                                     |
-| Call control     | `SendDtmf`                     | `(sessionId, dtmf)`                                           | `boolean \| void`                                   |
+| Call control     | `SendDtmf`                     | `(sessionId, dtmf)`                                           | `boolean`                                           |
 | Buddy management | `AddBuddy`                     | `(buddy)`                                                     | `Promise<void>`                                     |
 | Buddy management | `DeleteBuddy`                  | `(buddy)`                                                     | `Promise<void>`                                     |
 | Buddy management | `UpdateBuddy`                  | `(buddy)`                                                     | `Promise<void>`                                     |
@@ -411,6 +462,8 @@ Loads a single message from the Message Stream by its ID.
 | Recordings       | `GetRecording`                 | `(recordingId)`                                               | `Promise<RecordingObject \| null>`                  |
 | Recordings       | `PlayRecording`                | `(recording)`                                                 | `Promise<void>`                                     |
 | Message stream   | `LoadMessage`                  | `(messageId)`                                                 | `Promise<MessageStreamItem \| null>`                |
+| Message stream   | `FlagMessage`                  | `(messageId)`                                                 | `Promise<void>`                                     |
+| Session events   | `OnSessionChange`              | `(callback)`                                                  | `() => void`                                        |
 
 </details>
 
@@ -464,17 +517,12 @@ phone.SendDtmf(sessionId, "123#");
 #### Buddy management
 
 ```javascript
-// Add a buddy
-await phone.AddBuddy({
-  Id: "buddy-1",
-  DisplayName: "Support",
-  DisplayNumber: "1000",
-  Contacts: [{ Number: "1000", Provider: "sip" }]
-});
+// Add a buddy (BuddyObject must be a valid BuddyObject for your app)
+await phone.AddBuddy(buddyObject);
 
-// Later, update or delete
-await phone.UpdateBuddy({ Id: "buddy-1", DisplayName: "Tier 1 Support" });
-await phone.DeleteBuddy({ Id: "buddy-1" });
+// Later, update or delete (also requires a BuddyObject)
+await phone.UpdateBuddy(buddyObject);
+await phone.DeleteBuddy(buddyObject);
 ```
 
 #### Recordings
