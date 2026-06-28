@@ -231,6 +231,12 @@ cp env.example.js env.js
 
 The SIP.js and JsSIP demos are full, working WebRTC clients: they register, attach remote audio, configure ICE servers (a public STUN server by default, plus any STUN/TURN from provisioning or `EXTRA_ICE_SERVERS` in `env.js`), and expose **Call** / **Hangup** buttons with a live status line so you can confirm whether the WebRTC connection actually establishes.
 
+### Self-hosted Asterisk (no Siperb)
+
+If you run your own Asterisk (chan_pjsip with a WebRTC endpoint) and don't use Siperb, open [`test-Asterisk-WebRTC.html`](./test-Asterisk-WebRTC.html). It's a standalone JsSIP softphone (no build step, no Siperb API) where you enter your WSS server, SIP domain, extension, and password, then **Register** and **Call**. The page persists your settings in `localStorage`, logs the ICE/connection lifecycle, attaches remote audio, and answers inbound calls. It also includes the required Asterisk `http.conf` / `pjsip.conf` snippets (`webrtc=yes`) in a collapsible section.
+
+> Serve the page over `https://` (or `http://localhost`) — browsers only grant microphone access (`getUserMedia`) and WebRTC in a secure context. Your Asterisk WSS endpoint must present a certificate the browser trusts.
+
 ### Build the Library
 
 ```sh
