@@ -220,6 +220,17 @@ First, install dependencies:
 npm install
 ```
 
+### Provide test credentials
+
+The demo pages (`test-SIPJS.html`, `test-JSSIP.html`, `test-Browser-Phone.html`) load your Personal Access Token and Device Token from a local `env.js` file (which is gitignored). Copy the example and fill in your values:
+
+```sh
+cp env.example.js env.js
+# then edit env.js and set PERSONAL_ACCESS_TOKEN and DEVICE_TOKEN
+```
+
+The SIP.js and JsSIP demos are full, working WebRTC clients: they register, attach remote audio, configure ICE servers (a public STUN server by default, plus any STUN/TURN from provisioning or `EXTRA_ICE_SERVERS` in `env.js`), and expose **Call** / **Hangup** buttons with a live status line so you can confirm whether the WebRTC connection actually establishes.
+
 ### Build the Library
 
 ```sh
