@@ -26,6 +26,9 @@
         .status { padding: 10px 12px; border-radius: 8px; background: #111a2e; border: 1px solid #334155; margin-bottom: 12px; }
         .status b { color: #93c5fd; }
         #log { height: 200px; overflow: auto; background: #060a14; border: 1px solid #334155; border-radius: 8px; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+        .dialpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 280px; }
+        .dialpad button { background: #1e293b; color: #e5e7eb; font-size: 18px; padding: 14px 0; }
+        .dialpad button:hover { background: #334155; }
         details { margin-top: 16px; }
         summary { cursor: pointer; color: #93c5fd; }
         pre { background: #060a14; border: 1px solid #334155; border-radius: 8px; padding: 12px; overflow: auto; font-size: 12px; }
@@ -69,6 +72,20 @@
                 <button id="connectBtn">Register</button>
                 <button id="callBtn" disabled>Call</button>
                 <button id="hangupBtn" disabled>Hangup</button>
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Dialpad</legend>
+            <p style="margin:0 0 10px;color:#94a3b8;font-size:13px">
+                When idle, the keys build the number in <em>Destination</em>. During a call, they send DTMF tones
+                (use these to navigate the PBX auto-attendant / IVR menus).
+            </p>
+            <div class="dialpad" id="dialpad">
+                <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+                <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+                <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+                <button data-key="*">*</button><button data-key="0">0</button><button data-key="#">#</button>
             </div>
         </fieldset>
 
@@ -273,6 +290,20 @@ remove_existing=yes
         function hangup() {
             if (currentSession) { currentSession.terminate(); }
         }
+
+        // Dialpad: build the number when idle, send DTMF when on a call.
+        function pressKey(key) {
+            if (currentSession && (currentSession.isEstablished ? currentSession.isEstablished() : false)) {
+                currentSession.sendDTMF(key);
+                log("Sent DTMF: " + key);
+            } else {
+                $("target").value += key;
+            }
+        }
+        $("dialpad").addEventListener("click", function (e) {
+            const btn = e.target.closest("button[data-key]");
+            if (btn) pressKey(btn.getAttribute("data-key"));
+        });
 
         $("connectBtn").addEventListener("click", connect);
         $("callBtn").addEventListener("click", call);

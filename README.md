@@ -237,6 +237,18 @@ If you run your own Asterisk (chan_pjsip with a WebRTC endpoint) and don't use S
 
 > Serve the page over `https://` (or `http://localhost`) — browsers only grant microphone access (`getUserMedia`) and WebRTC in a secure context. Your Asterisk WSS endpoint must present a certificate the browser trusts.
 
+### Local HTTPS (required for the microphone)
+
+The `npm start` scripts now serve the demos over **HTTPS** on `https://127.0.0.1:7777/`. A self-signed certificate is generated automatically into `certs/` (gitignored) the first time you run them — no OpenSSL needed (uses the `selfsigned` package).
+
+```sh
+npm start            # build + cert + serve test-index.html over HTTPS
+npm run start:asterisk   # the standalone Asterisk WebRTC softphone
+npm run cert         # (re)generate the local certificate only
+```
+
+Because the certificate is self-signed, your browser will show a warning the first time — choose **Advanced → Proceed** to continue. The server binds `0.0.0.0`, so you can also reach it from another device on your LAN at `https://<your-ip>:7777/` (accept the cert warning there too).
+
 ### Build the Library
 
 ```sh

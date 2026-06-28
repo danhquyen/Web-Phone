@@ -7,10 +7,13 @@
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w",
-    "start": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-index.html",
-    "start:sipjs": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-SIPJS.html",
-    "start:jssip": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-JSSIP.html",
-    "start:phone": "npm run build && http-server -p 7777 -a 127.0.0.1 -c-1 -o test-Browser-Phone.html"
+    "cert": "node scripts/generate-cert.mjs",
+    "serve": "http-server -S -C certs/cert.pem -K certs/key.pem -p 7777 -a 0.0.0.0 -c-1",
+    "start": "npm run build && npm run cert && npm run serve -- -o test-index.html",
+    "start:sipjs": "npm run build && npm run cert && npm run serve -- -o test-SIPJS.html",
+    "start:jssip": "npm run build && npm run cert && npm run serve -- -o test-JSSIP.html",
+    "start:phone": "npm run build && npm run cert && npm run serve -- -o test-Browser-Phone.html",
+    "start:asterisk": "npm run build && npm run cert && npm run serve -- -o test-Asterisk-WebRTC.html"
   },
   "keywords": [],
   "author": "",
@@ -20,7 +23,8 @@
     "@rollup/plugin-node-resolve": "^16.0.1",
     "http-server": "^14.1.1",
     "rollup": "^2.79.2",
-    "rollup-plugin-terser": "^7.0.2"
+    "rollup-plugin-terser": "^7.0.2",
+    "selfsigned": "^5.5.0"
   },
   "dependencies": {
     "jssip": "^3.10.1",
