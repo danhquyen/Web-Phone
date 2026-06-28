@@ -7,21 +7,76 @@
     <script src="https://cdn.jsdelivr.net/npm/jssip@3/dist/jssip.min.js"></script>
     <!-- Include your web phone script if needed -->
     <script src="./dist/Siperb-Web-Phone.umd.min.js"></script>
+    <!-- Local credentials (copy env.example.js -> env.js). env.js is gitignored. -->
+    <script src="./env.js"></script>
     <!-- Include your test script -->
     <script>
+        let ua = null;
+        let currentSession = null;
+
+        function setStatus(text) {
+            console.log("Status:", text);
+            const el = document.getElementById("status");
+            if (el) el.textContent = text;
+        }
+
+        // Build the list of ICE servers (STUN/TURN) used for WebRTC media.
+        // Without at least a STUN server, calls usually fail to negotiate media
+        // once the two peers are not on the same local network (NAT traversal).
+        function buildIceServers(provisioning) {
+            const iceServers = [];
+            if (provisioning) {
+                if (Array.isArray(provisioning.IceServers)) iceServers.push(...provisioning.IceServers);
+                if (provisioning.StunServer) iceServers.push({ urls: provisioning.StunServer });
+                if (provisioning.TurnServer) {
+                    iceServers.push({
+                        urls: provisioning.TurnServer,
+                        username: provisioning.TurnUsername || provisioning.SipUsername,
+                        credential: provisioning.TurnPassword || provisioning.SipPassword
+                    });
+                }
+            }
+            if (Array.isArray(window.EXTRA_ICE_SERVERS)) iceServers.push(...window.EXTRA_ICE_SERVERS);
+            if (iceServers.length === 0) iceServers.push({ urls: "stun:stun.l.google.com:19302" });
+            return iceServers;
+        }
+
+        // Attach remote media + log ICE lifecycle for a JsSIP RTCSession.
+        function wireSession(session) {
+            currentSession = session;
+
+            session.on("peerconnection", function (e) {
+                const pc = e.peerconnection;
+                pc.addEventListener("track", function (ev) {
+                    const remoteAudio = document.getElementById("remoteAudio");
+                    remoteAudio.srcObject = ev.streams[0];
+                    remoteAudio.play().catch(function (err) {
+                        console.warn("Autoplay blocked, click the page to allow audio:", err.message);
+                    });
+                });
+                pc.addEventListener("iceconnectionstatechange", function () {
+                    setStatus("ICE state: " + pc.iceConnectionState);
+                });
+            });
+            session.on("confirmed", function () { setStatus("Call connected"); });
+            session.on("ended", function () { setStatus("Call ended"); currentSession = null; });
+            session.on("failed", function (e) { setStatus("Call failed: " + (e.cause || "")); currentSession = null; });
+        }
+
         async function main() {
-            const accessToken = '<YOUR_PERSONAL_ACCESS_TOKEN>';
+            const accessToken = window.PERSONAL_ACCESS_TOKEN || "<YOUR_PERSONAL_ACCESS_TOKEN>";
             let session;
             try {
                 session = await window.Siperb.Login(accessToken);
             } catch (error) {
                 console.error('Failed to get session:', error);
+                setStatus("Login failed: " + error);
                 return;
             }
 
             // Assume you have a known DeviceToken or use GetDevices as in test.js
             // See admin control Panel for generating Script Devices (to get DeviceToken)
-            const deviceToken = "<YOUR_KNOWN_DEVICE_TOKEN>";
+            const deviceToken = window.DEVICE_TOKEN || "<YOUR_KNOWN_DEVICE_TOKEN>";
             const provisioning = await window.Siperb.GetProvisioning({
                 UserId: session.UserId,
                 DeviceToken: deviceToken,
@@ -29,44 +84,78 @@
                 EnableCache: true,
                 ProvisioningKey: 'SiperbProvisioning'
             });
+            if (!provisioning) {
+                setStatus("Provisioning failed (check token / device).");
+                return;
+            }
 
             // Build WebSocket server URL
             const wsServer = `wss://${provisioning.SipWssServer}:${provisioning.SipWebsocketPort}/${provisioning.SipServerPath}`;
-            // Example JsSIP configuration using provisioning details
+            const iceServers = buildIceServers(provisioning);
+            console.log("Using ICE servers:", iceServers);
+
+            // JsSIP configuration using provisioning details
             const socket = new window.JsSIP.WebSocketInterface(wsServer);
             const configuration = {
                 sockets: [socket],
                 uri: `sip:${provisioning.SipUsername}@${provisioning.SipDomain}`,
                 password: provisioning.SipPassword,
                 contact_uri: `sip:${provisioning.SipContact || provisioning.ContactUserName}@${provisioning.SipDomain}`,
-                // ...other JsSIP options as needed
+                register: true
             };
 
             console.log('JsSIP config:', configuration);
 
+            // Headers required when connecting through the Siperb proxy.
+            const useSiperbHeaders = provisioning.RegistrationMode === "Proxy" || (provisioning.SipWssServer || "").endsWith(".siperb.com");
+            const siperbHeaders = useSiperbHeaders ? [
+                `X-Siperb-Sid: ${session.SessionToken}`,
+                `X-Siperb-Uid: ${session.UserId}`,
+                ...(provisioning.SipJwt ? [`Authorization: Bearer ${provisioning.SipJwt}`] : [])
+            ] : [];
+
             // Start JsSIP UserAgent
-            const ua = new window.JsSIP.UA(configuration);
+            ua = new window.JsSIP.UA(configuration);
+
+            ua.on("connected", function () { setStatus("WebSocket connected"); });
+            ua.on("disconnected", function () { setStatus("WebSocket disconnected"); });
+            ua.on("registered", function () { setStatus("Registered"); });
+            ua.on("registrationFailed", function (e) { setStatus("Registration failed: " + (e.cause || "")); });
+
+            // Handle inbound calls: answer and attach media.
+            ua.on("newRTCSession", function (data) {
+                if (data.originator === "remote") {
+                    setStatus("Incoming call... answering");
+                    wireSession(data.session);
+                    data.session.answer({
+                        mediaConstraints: { audio: true, video: false },
+                        pcConfig: { iceServers: iceServers },
+                        extraHeaders: siperbHeaders
+                    });
+                }
+            });
+
             ua.start();
             console.log('JsSIP UA started.');
 
-            // Example: Make an outbound call with custom headers
-            const target = 'sip:*65@example.com'; // Replace with real destination
-            const eventHandlers = {};
-            const options = {
-                // If you are connecting to Siperb, then you should also add the following headers to both the REGISTER and INVITE requests
-                extraHeaders: [
-                    // Your Siperb Session token
-                    `X-Siperb-Sid: ${session.SessionToken}`,
-                    // Your Siperb User ID
-                    `X-Siperb-Uid: ${session.UserId}`,
-                    // Your Siperb JSON web Token
-                    `Authorization: Bearer ${provisioning.SipJwt}`
-                ]
-                // ...other call options as needed
-            };
-            ua.call(target, options);
-            console.log('Outbound call initiated with custom headers.');
-            // End of demonstration
+            // Wire up the manual Call / Hangup buttons.
+            document.getElementById("callBtn").addEventListener("click", function () {
+                const number = (window.DIAL_TARGET || "*65");
+                const target = `sip:${number}@${provisioning.SipDomain}`;
+                const options = {
+                    mediaConstraints: { audio: true, video: false },
+                    pcConfig: { iceServers: iceServers },
+                    extraHeaders: siperbHeaders
+                };
+                const callSession = ua.call(target, options);
+                wireSession(callSession);
+                setStatus("Calling " + number + "...");
+            });
+
+            document.getElementById("hangupBtn").addEventListener("click", function () {
+                if (currentSession) currentSession.terminate();
+                setStatus("Call ended");
+            });
         }
 
         window.addEventListener('load', () => {
@@ -79,6 +168,13 @@
 <body>
     <h1>JsSIP Test</h1>
     <p>Open the console to see JsSIP logs and provisioning output.</p>
+    <p>Status: <span id="status">Loading...</span></p>
+    <div>
+        <button id="callBtn">Call</button>
+        <button id="hangupBtn">Hangup</button>
+    </div>
+    <!-- Remote audio sink: without this you won't hear the call even if WebRTC connects. -->
+    <audio id="remoteAudio" autoplay></audio>
 </body>
 
 </html>

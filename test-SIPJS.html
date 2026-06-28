@@ -7,21 +7,102 @@
     <script src="https://d22gi2hj55ngoj.cloudfront.net/lib/SipJS/sip-0.20.0.min.js"></script>
     <!-- Siperb Web Phone UMD build -->
     <script src="./dist/Siperb-Web-Phone.umd.min.js"></script>
+    <!-- Local credentials (copy env.example.js -> env.js). env.js is gitignored. -->
+    <script src="./env.js"></script>
     <!-- Include your test script -->
     <script>
+        // Holds the current SIP.js session so the Hangup button can reach it.
+        let currentSession = null;
+        let userAgent = null;
+        let registerer = null;
+
+        function setStatus(text) {
+            console.log("Status:", text);
+            const el = document.getElementById("status");
+            if (el) el.textContent = text;
+        }
+
+        // Build the list of ICE servers (STUN/TURN) used for WebRTC media.
+        // Without at least a STUN server, calls usually fail to negotiate media
+        // once the two peers are not on the same local network (NAT traversal).
+        function buildIceServers(provisioning) {
+            const iceServers = [];
+            // 1) Anything provisioning hands us (shape can vary by account).
+            if (provisioning) {
+                if (Array.isArray(provisioning.IceServers)) iceServers.push(...provisioning.IceServers);
+                if (provisioning.StunServer) iceServers.push({ urls: provisioning.StunServer });
+                if (provisioning.TurnServer) {
+                    iceServers.push({
+                        urls: provisioning.TurnServer,
+                        username: provisioning.TurnUsername || provisioning.SipUsername,
+                        credential: provisioning.TurnPassword || provisioning.SipPassword
+                    });
+                }
+            }
+            // 2) Anything you configured locally in env.js
+            if (Array.isArray(window.EXTRA_ICE_SERVERS)) iceServers.push(...window.EXTRA_ICE_SERVERS);
+            // 3) Fallback public STUN so the demo works out of the box.
+            if (iceServers.length === 0) iceServers.push({ urls: "stun:stun.l.google.com:19302" });
+            return iceServers;
+        }
+
+        // Attach the remote audio track(s) to the <audio> element so you can hear the call.
+        function setupRemoteMedia(session) {
+            const sdh = session.sessionDescriptionHandler;
+            const pc = sdh && sdh.peerConnection;
+            if (!pc) {
+                console.warn("No peerConnection available to attach remote media.");
+                return;
+            }
+            const remoteStream = new MediaStream();
+            pc.getReceivers().forEach(function (receiver) {
+                if (receiver.track) remoteStream.addTrack(receiver.track);
+            });
+            const remoteAudio = document.getElementById("remoteAudio");
+            remoteAudio.srcObject = remoteStream;
+            remoteAudio.play().catch(function (e) {
+                console.warn("Autoplay blocked, click the page to allow audio:", e.message);
+            });
+
+            // Log ICE/connection lifecycle so you can SEE whether WebRTC connects.
+            pc.oniceconnectionstatechange = function () {
+                setStatus("ICE state: " + pc.iceConnectionState);
+            };
+            pc.onconnectionstatechange = function () {
+                console.log("PeerConnection state:", pc.connectionState);
+            };
+        }
+
+        // Wire a session's lifecycle: attach media once established, clean up on end.
+        function handleSession(session) {
+            currentSession = session;
+            session.stateChange.addListener(function (state) {
+                console.log("SIP.js session state:", state);
+                setStatus("Call: " + state);
+                if (state === window.SIP.SessionState.Established) {
+                    setupRemoteMedia(session);
+                } else if (state === window.SIP.SessionState.Terminated) {
+                    currentSession = null;
+                    const remoteAudio = document.getElementById("remoteAudio");
+                    if (remoteAudio) remoteAudio.srcObject = null;
+                }
+            });
+        }
+
         async function main() {
-            const accessToken = '<YOUR_PERSONAL_ACCESS_TOKEN>';
+            const accessToken = window.PERSONAL_ACCESS_TOKEN || "<YOUR_PERSONAL_ACCESS_TOKEN>";
             let session;
             try {
                 session = await window.Siperb.Login(accessToken);
             } catch (error) {
                 console.error('Failed to get session:', error);
+                setStatus("Login failed: " + error);
                 return;
             }
 
             // Assume you have a known DeviceToken or use GetDevices as in test.js
             // See admin control Panel for generating Script Devices (to get DeviceToken)
-            const deviceToken = "<YOUR_KNOWN_DEVICE_TOKEN>";
+            const deviceToken = window.DEVICE_TOKEN || "<YOUR_KNOWN_DEVICE_TOKEN>";
             const provisioning = await window.Siperb.GetProvisioning({
                 UserId: session.UserId,
                 DeviceToken: deviceToken,
@@ -29,11 +110,18 @@
                 EnableCache: true,
                 ProvisioningKey: 'SiperbProvisioning'
             });
+            if (!provisioning) {
+                setStatus("Provisioning failed (check token / device).");
+                return;
+            }
 
             // Build WebSocket server URL
             const uri = window.SIP.UserAgent.makeURI(`sip:${provisioning.SipUsername}@${provisioning.SipDomain}`);
             const wsServer = `wss://${provisioning.SipWssServer}:${provisioning.SipWebsocketPort}/${provisioning.SipServerPath}`;
-            // Example SIP.js configuration using provisioning details
+            const iceServers = buildIceServers(provisioning);
+            console.log("Using ICE servers:", iceServers);
+
+            // SIP.js configuration using provisioning details.
             const sipConfig = {
                 uri: uri,
                 authorizationUsername: provisioning.SipUsername,
@@ -41,35 +129,87 @@
                 contactName: provisioning.SipContact,
                 transportOptions: {
                     server: wsServer
+                },
+                // CRITICAL for WebRTC media: configure the RTCPeerConnection with ICE servers.
+                sessionDescriptionHandlerFactoryOptions: {
+                    peerConnectionConfiguration: {
+                        iceServers: iceServers
+                    }
+                },
+                // Receive incoming calls and auto-attach media.
+                delegate: {
+                    onInvite: function (invitation) {
+                        setStatus("Incoming call... auto-answering");
+                        handleSession(invitation);
+                        invitation.accept({
+                            sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } }
+                        });
+                    }
                 }
-                // ...other SIP.js options as needed
             };
 
             console.log('SIP.js config:', sipConfig);
 
             // Start SIP.js UserAgent
-            const userAgent = new window.SIP.UserAgent(sipConfig);
+            userAgent = new window.SIP.UserAgent(sipConfig);
             await userAgent.start();
             console.log('SIP.js UserAgent started.');
 
-            // Example: Make an outbound call with custom headers
-            const target = window.SIP.UserAgent.makeURI("sip:*65@siperb.com"); // Replace with real destination
-            const options = {
-                // If you are connecting to Siperb, then you should also add the following headers to both the REGISTER and INVITE requests
-                extraHeaders: [
-                    // Your Siperb Session token
-                    `X-Siperb-Sid: ${session.SessionToken}`,
-                    // Your Siperb User ID
-                    `X-Siperb-Uid: ${session.UserId}`,
-                    // Your Siperb JSON web Token
-                    `Authorization: Bearer ${provisioning.SipJwt}`
-                ]
-                // ...other call options as needed
+            // Register so the SIP server knows where to send inbound calls.
+            // Siperb proxy mode wants the session/user headers on REGISTER too.
+            const registerOptions = {};
+            if (provisioning.RegistrationMode === "Proxy" || (provisioning.SipWssServer || "").endsWith(".siperb.com")) {
+                registerOptions.requestOptions = {
+                    extraHeaders: [
+                        `X-Siperb-Sid: ${session.SessionToken}`,
+                        `X-Siperb-Uid: ${session.UserId}`,
+                        ...(provisioning.SipJwt ? [`Authorization: Bearer ${provisioning.SipJwt}`] : [])
+                    ]
+                };
             }
-            const inviter = new window.SIP.Inviter(userAgent, target, options);
-            await inviter.invite();
-            console.log('Outbound call initiated with custom headers.');
-            // End of demonstration
+            registerer = new window.SIP.Registerer(userAgent);
+            registerer.stateChange.addListener(function (state) {
+                setStatus("Registration: " + state);
+            });
+            await registerer.register(registerOptions);
+            console.log('SIP.js registered.');
+
+            // Wire up the manual Call / Hangup buttons.
+            document.getElementById("callBtn").addEventListener("click", async function () {
+                const number = (window.DIAL_TARGET || "*65");
+                const target = window.SIP.UserAgent.makeURI(`sip:${number}@${provisioning.SipDomain}`);
+                const inviteOptions = {
+                    sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } },
+                    requestDelegate: {
+                        onAccept: function () { setStatus("Call accepted"); }
+                    }
+                };
+                // If you are connecting to Siperb, add session/user headers to the INVITE.
+                if (provisioning.RegistrationMode === "Proxy" || (provisioning.SipWssServer || "").endsWith(".siperb.com")) {
+                    inviteOptions.extraHeaders = [
+                        `X-Siperb-Sid: ${session.SessionToken}`,
+                        `X-Siperb-Uid: ${session.UserId}`,
+                        ...(provisioning.SipJwt ? [`Authorization: Bearer ${provisioning.SipJwt}`] : [])
+                    ];
+                }
+                const inviter = new window.SIP.Inviter(userAgent, target, inviteOptions);
+                handleSession(inviter);
+                await inviter.invite();
+                setStatus("Calling " + number + "...");
+            });
+
+            document.getElementById("hangupBtn").addEventListener("click", async function () {
+                if (!currentSession) return;
+                const state = currentSession.state;
+                if (state === window.SIP.SessionState.Initial || state === window.SIP.SessionState.Establishing) {
+                    await currentSession.cancel();
+                } else if (state === window.SIP.SessionState.Established) {
+                    await currentSession.bye();
+                }
+                setStatus("Call ended");
+            });
+
+            setStatus("Ready. Click Call to dial " + (window.DIAL_TARGET || "*65"));
         }
 
         window.addEventListener('load', () => {
@@ -82,6 +222,13 @@
 <body>
     <h1>SIP.js Browser Test</h1>
     <p>Open the console to see SIP.js logs and provisioning output.</p>
+    <p>Status: <span id="status">Loading...</span></p>
+    <div>
+        <button id="callBtn">Call</button>
+        <button id="hangupBtn">Hangup</button>
+    </div>
+    <!-- Remote audio sink: without this you won't hear the call even if WebRTC connects. -->
+    <audio id="remoteAudio" autoplay></audio>
 </body>
 
 </html>

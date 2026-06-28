@@ -220,6 +220,35 @@ First, install dependencies:
 npm install
 ```
 
+### Provide test credentials
+
+The demo pages (`test-SIPJS.html`, `test-JSSIP.html`, `test-Browser-Phone.html`) load your Personal Access Token and Device Token from a local `env.js` file (which is gitignored). Copy the example and fill in your values:
+
+```sh
+cp env.example.js env.js
+# then edit env.js and set PERSONAL_ACCESS_TOKEN and DEVICE_TOKEN
+```
+
+The SIP.js and JsSIP demos are full, working WebRTC clients: they register, attach remote audio, configure ICE servers (a public STUN server by default, plus any STUN/TURN from provisioning or `EXTRA_ICE_SERVERS` in `env.js`), and expose **Call** / **Hangup** buttons with a live status line so you can confirm whether the WebRTC connection actually establishes.
+
+### Self-hosted Asterisk (no Siperb)
+
+If you run your own Asterisk (chan_pjsip with a WebRTC endpoint) and don't use Siperb, open [`test-Asterisk-WebRTC.html`](./test-Asterisk-WebRTC.html). It's a standalone JsSIP softphone (no build step, no Siperb API) where you enter your WSS server, SIP domain, extension, and password, then **Register** and **Call**. The page persists your settings in `localStorage`, logs the ICE/connection lifecycle, attaches remote audio, and answers inbound calls. It also includes the required Asterisk `http.conf` / `pjsip.conf` snippets (`webrtc=yes`) in a collapsible section.
+
+> Serve the page over `https://` (or `http://localhost`) — browsers only grant microphone access (`getUserMedia`) and WebRTC in a secure context. Your Asterisk WSS endpoint must present a certificate the browser trusts.
+
+### Local HTTPS (required for the microphone)
+
+The `npm start` scripts now serve the demos over **HTTPS** on `https://127.0.0.1:7777/`. A self-signed certificate is generated automatically into `certs/` (gitignored) the first time you run them — no OpenSSL needed (uses the `selfsigned` package).
+
+```sh
+npm start            # build + cert + serve test-index.html over HTTPS
+npm run start:asterisk   # the standalone Asterisk WebRTC softphone
+npm run cert         # (re)generate the local certificate only
+```
+
+Because the certificate is self-signed, your browser will show a warning the first time — choose **Advanced → Proceed** to continue. The server binds `0.0.0.0`, so you can also reach it from another device on your LAN at `https://<your-ip>:7777/` (accept the cert warning there too).
+
 ### Build the Library
 
 ```sh

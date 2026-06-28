@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asterisk WebRTC Softphone (JsSIP)</title>
+    <!-- JsSIP UMD build (exposes window.JsSIP). No build step, no Siperb dependency. -->
+    <script src="https://cdn.jsdelivr.net/npm/jssip@3/dist/jssip.min.js"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b1220; color: #e5e7eb; }
+        header { padding: 16px 24px; background: #111a2e; }
+        header h1 { margin: 0; font-size: 18px; }
+        main { padding: 24px; max-width: 720px; }
+        fieldset { border: 1px solid #334155; border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+        legend { padding: 0 8px; color: #93c5fd; font-weight: 600; }
+        label { display: block; font-size: 13px; margin: 10px 0 4px; color: #cbd5e1; }
+        input { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e5e7eb; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+        button { padding: 10px 16px; border-radius: 8px; border: 0; cursor: pointer; font-weight: 600; }
+        #connectBtn { background: #2563eb; color: #fff; }
+        #callBtn { background: #16a34a; color: #fff; }
+        #hangupBtn { background: #dc2626; color: #fff; }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        .status { padding: 10px 12px; border-radius: 8px; background: #111a2e; border: 1px solid #334155; margin-bottom: 12px; }
+        .status b { color: #93c5fd; }
+        #log { height: 200px; overflow: auto; background: #060a14; border: 1px solid #334155; border-radius: 8px; padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+        .dialpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 280px; }
+        .dialpad button { background: #1e293b; color: #e5e7eb; font-size: 18px; padding: 14px 0; }
+        .dialpad button:hover { background: #334155; }
+        details { margin-top: 16px; }
+        summary { cursor: pointer; color: #93c5fd; }
+        pre { background: #060a14; border: 1px solid #334155; border-radius: 8px; padding: 12px; overflow: auto; font-size: 12px; }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Asterisk WebRTC Softphone <span style="color:#64748b">(JsSIP, direct — no Siperb)</span></h1>
+    </header>
+    <main>
+        <div class="status">Status: <b id="status">Idle</b></div>
+
+        <fieldset>
+            <legend>Connection</legend>
+            <label>WebSocket server (Asterisk http.conf, transport-wss)</label>
+            <input id="wss" placeholder="wss://asterisk.example.com:8089/ws" />
+            <div class="row">
+                <div>
+                    <label>SIP domain / server</label>
+                    <input id="domain" placeholder="asterisk.example.com" />
+                </div>
+                <div>
+                    <label>Extension (PJSIP endpoint / auth username)</label>
+                    <input id="username" placeholder="1001" />
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    <label>Password (auth password)</label>
+                    <input id="password" type="password" placeholder="secret" />
+                </div>
+                <div>
+                    <label>Destination to dial</label>
+                    <input id="target" placeholder="1002 or echo test, e.g. *43" />
+                </div>
+            </div>
+            <label>STUN / TURN (optional, comma separated). A public STUN is used if empty.</label>
+            <input id="ice" placeholder="stun:stun.l.google.com:19302, turn:turn.example.com:3478" />
+            <div class="btns">
+                <button id="connectBtn">Register</button>
+                <button id="callBtn" disabled>Call</button>
+                <button id="hangupBtn" disabled>Hangup</button>
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Dialpad</legend>
+            <p style="margin:0 0 10px;color:#94a3b8;font-size:13px">
+                When idle, the keys build the number in <em>Destination</em>. During a call, they send DTMF tones
+                (use these to navigate the PBX auto-attendant / IVR menus).
+            </p>
+            <div class="dialpad" id="dialpad">
+                <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+                <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+                <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+                <button data-key="*">*</button><button data-key="0">0</button><button data-key="#">#</button>
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Log</legend>
+            <div id="log"></div>
+        </fieldset>
+
+        <audio id="remoteAudio" autoplay></audio>
+
+        <details>
+            <summary>Required Asterisk server-side configuration (pjsip.conf / http.conf)</summary>
+            <pre>
+; --- http.conf : enable the WebSocket (WSS) listener ---
+[general]
+enabled=yes
+bindaddr=0.0.0.0
+tlsenable=yes
+tlsbindaddr=0.0.0.0:8089
+tlscertfile=/etc/asterisk/keys/asterisk.crt
+tlsprivatekey=/etc/asterisk/keys/asterisk.key
+; WebSocket path is /ws  ->  wss://your-host:8089/ws
+
+; --- pjsip.conf : WSS transport ---
+[transport-wss]
+type=transport
+protocol=wss
+bind=0.0.0.0
+
+; --- pjsip.conf : a WebRTC endpoint (extension 1001) ---
+[1001]
+type=endpoint
+context=from-internal
+disallow=all
+allow=opus,ulaw
+auth=1001
+aors=1001
+webrtc=yes            ; enables DTLS-SRTP, ICE, rtcp-mux, AVPF automatically
+
+[1001]
+type=auth
+auth_type=userpass
+username=1001
+password=secret
+
+[1001]
+type=aor
+max_contacts=1
+remove_existing=yes
+
+; Notes
+; - webrtc=yes implies: media_encryption=dtls, dtls_auto_generate_cert=yes,
+;   ice_support=yes, use_avpf=yes, rtcp_mux=yes, media_use_received_transport=yes.
+; - The browser requires WSS (TLS). A self-signed cert must be trusted by the
+;   browser first, or use a real cert (Let's Encrypt).
+; - The page must be served over https:// (or http://localhost) for getUserMedia.
+            </pre>
+        </details>
+    </main>
+
+    <script>
+        const $ = function (id) { return document.getElementById(id); };
+        let ua = null;
+        let currentSession = null;
+
+        function setStatus(text) { $("status").textContent = text; }
+        function log(text) {
+            const line = "[" + new Date().toLocaleTimeString() + "] " + text;
+            console.log(line);
+            const el = $("log");
+            el.textContent += line + "\n";
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // Persist the form so you don't retype it every reload.
+        const FIELDS = ["wss", "domain", "username", "password", "target", "ice"];
+        function loadForm() {
+            try {
+                const saved = JSON.parse(localStorage.getItem("asteriskWebrtcConfig") || "{}");
+                FIELDS.forEach(function (f) { if (saved[f] != null) $(f).value = saved[f]; });
+            } catch (e) { /* ignore */ }
+        }
+        function saveForm() {
+            const data = {};
+            FIELDS.forEach(function (f) { data[f] = $(f).value; });
+            localStorage.setItem("asteriskWebrtcConfig", JSON.stringify(data));
+        }
+
+        // Turn the comma-separated ICE field into an RTCIceServer array.
+        function buildIceServers() {
+            const raw = $("ice").value.trim();
+            if (!raw) return [{ urls: "stun:stun.l.google.com:19302" }];
+            return raw.split(",").map(function (s) { return s.trim(); }).filter(Boolean)
+                .map(function (url) {
+                    // TURN entries can carry credentials as  turn:host|user|pass
+                    if (url.startsWith("turn")) {
+                        const parts = url.split("|");
+                        if (parts.length === 3) return { urls: parts[0], username: parts[1], credential: parts[2] };
+                    }
+                    return { urls: url };
+                });
+        }
+
+        // Attach remote audio + log the WebRTC ICE/connection lifecycle for a session.
+        function wireSession(session) {
+            currentSession = session;
+            $("hangupBtn").disabled = false;
+
+            session.on("peerconnection", function (e) {
+                const pc = e.peerconnection;
+                pc.addEventListener("track", function (ev) {
+                    log("Remote media track received (" + ev.track.kind + ")");
+                    $("remoteAudio").srcObject = ev.streams[0];
+                    $("remoteAudio").play().catch(function (err) {
+                        log("Autoplay blocked, click the page: " + err.message);
+                    });
+                });
+                pc.addEventListener("iceconnectionstatechange", function () {
+                    log("ICE state: " + pc.iceConnectionState);
+                    setStatus("ICE: " + pc.iceConnectionState);
+                });
+                pc.addEventListener("connectionstatechange", function () {
+                    log("PeerConnection state: " + pc.connectionState);
+                });
+            });
+            session.on("connecting", function () { setStatus("Call connecting"); });
+            session.on("progress", function () { setStatus("Ringing"); log("Call progress (ringing)"); });
+            session.on("accepted", function () { log("Call accepted"); });
+            session.on("confirmed", function () { setStatus("In call"); log("Call confirmed (media should be flowing)"); });
+            session.on("ended", function (e) { setStatus("Call ended"); log("Call ended: " + ((e.cause) || "")); cleanupCall(); });
+            session.on("failed", function (e) { setStatus("Call failed"); log("Call failed: " + ((e.cause) || "")); cleanupCall(); });
+        }
+
+        function cleanupCall() {
+            currentSession = null;
+            $("hangupBtn").disabled = true;
+            $("remoteAudio").srcObject = null;
+        }
+
+        function connect() {
+            if (!$("wss").value || !$("domain").value || !$("username").value) {
+                log("Please fill in WSS server, domain and extension.");
+                return;
+            }
+            saveForm();
+
+            if (ua) { try { ua.stop(); } catch (e) {} ua = null; }
+
+            const socket = new window.JsSIP.WebSocketInterface($("wss").value.trim());
+            const configuration = {
+                sockets: [socket],
+                uri: "sip:" + $("username").value.trim() + "@" + $("domain").value.trim(),
+                password: $("password").value,
+                register: true,
+                session_timers: false   // many Asterisk setups interop better with this off
+            };
+            log("Starting JsSIP UA -> " + configuration.uri);
+
+            ua = new window.JsSIP.UA(configuration);
+            const iceServers = buildIceServers();
+            log("ICE servers: " + JSON.stringify(iceServers));
+
+            ua.on("connecting", function () { setStatus("WebSocket connecting"); });
+            ua.on("connected", function () { setStatus("WebSocket connected"); log("WebSocket connected"); });
+            ua.on("disconnected", function () { setStatus("WebSocket disconnected"); log("WebSocket disconnected"); $("callBtn").disabled = true; });
+            ua.on("registered", function () { setStatus("Registered"); log("Registered with Asterisk"); $("callBtn").disabled = false; });
+            ua.on("unregistered", function () { setStatus("Unregistered"); $("callBtn").disabled = true; });
+            ua.on("registrationFailed", function (e) { setStatus("Registration failed"); log("Registration failed: " + (e.cause || "")); });
+
+            // Inbound calls: answer with audio + the same ICE config.
+            ua.on("newRTCSession", function (data) {
+                if (data.originator === "remote") {
+                    log("Incoming call from " + (data.request.from.uri.toString()));
+                    setStatus("Incoming call... answering");
+                    wireSession(data.session);
+                    data.session.answer({
+                        mediaConstraints: { audio: true, video: false },
+                        pcConfig: { iceServers: iceServers }
+                    });
+                }
+            });
+
+            ua.start();
+        }
+
+        function call() {
+            if (!ua) return;
+            const number = $("target").value.trim();
+            if (!number) { log("Enter a destination to dial."); return; }
+            const iceServers = buildIceServers();
+            const options = {
+                mediaConstraints: { audio: true, video: false },
+                pcConfig: { iceServers: iceServers }
+            };
+            const target = "sip:" + number + "@" + $("domain").value.trim();
+            log("Calling " + target);
+            setStatus("Calling " + number);
+            const session = ua.call(target, options);
+            wireSession(session);
+        }
+
+        function hangup() {
+            if (currentSession) { currentSession.terminate(); }
+        }
+
+        // Dialpad: build the number when idle, send DTMF when on a call.
+        function pressKey(key) {
+            if (currentSession && (currentSession.isEstablished ? currentSession.isEstablished() : false)) {
+                currentSession.sendDTMF(key);
+                log("Sent DTMF: " + key);
+            } else {
+                $("target").value += key;
+            }
+        }
+        $("dialpad").addEventListener("click", function (e) {
+            const btn = e.target.closest("button[data-key]");
+            if (btn) pressKey(btn.getAttribute("data-key"));
+        });
+
+        $("connectBtn").addEventListener("click", connect);
+        $("callBtn").addEventListener("click", call);
+        $("hangupBtn").addEventListener("click", hangup);
+
+        // JsSIP has a built-in debug logger; turn it on for deep troubleshooting:
+        // window.JsSIP.debug.enable('JsSIP:*');
+        loadForm();
+        log("Ready. Fill in your Asterisk details and click Register.");
+    </script>
+</body>
+
+</html>

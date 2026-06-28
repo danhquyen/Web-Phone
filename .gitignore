@@ -424,3 +424,5 @@ FodyWeavers.xsd
 dist/
 
 env.js
+# Local dev TLS certificates
+certs/
